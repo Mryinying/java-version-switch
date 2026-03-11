@@ -121,7 +121,10 @@ cargo run -- use 17
 
 ## 扩展方向
 
-- 支持自动下载安装 JDK (类似 sdkman)
+- 支持项目级 `.java-version` 文件
+- 添加 `jvs default` 命令设置默认版本
+- Homebrew formula 发布
+动下载安装 JDK (类似 sdkman)
 - 支持项目级 `.java-version` 文件
 - 添加 `jvs default` 命令设置默认版本
 - Homebrew formula 发布

@@ -3,6 +3,7 @@ use colored::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 #[derive(Parser)]
 #[command(name = "jvs", version, about = "Java Version Switch - manage Java versions on macOS and Linux")]
@@ -20,6 +21,16 @@ enum Commands {
     /// Switch to a specified Java version (prefix match)
     Use {
         /// Version prefix to match, e.g. "17", "11", "1.8"
+        version: String,
+    },
+    /// Install a JDK via system package manager (brew/apt/yum)
+    Install {
+        /// Major version to install, e.g. "17", "21", "11"
+        version: String,
+    },
+    /// Remove a JDK via system package manager
+    Remove {
+        /// Major version to remove, e.g. "17", "21", "11"
         version: String,
     },
 }
@@ -257,11 +268,133 @@ export PATH="$JAVA_HOME/bin:$PATH"
     }
 }
 
+fn detect_pkg_manager() -> Option<(&'static str, &'static str)> {
+    // Returns (manager_name, executable)
+    if cfg!(target_os = "macos") {
+        if Command::new("brew").arg("--version").output().is_ok() {
+            return Some(("brew", "brew"));
+        }
+    } else {
+        if Command::new("apt-get").arg("--version").output().is_ok() {
+            return Some(("apt", "apt-get"));
+        }
+        if Command::new("yum").arg("--version").output().is_ok() {
+            return Some(("yum", "yum"));
+        }
+    }
+    None
+}
+
+fn cmd_install(version: &str) {
+    let (mgr, _) = detect_pkg_manager().unwrap_or_else(|| {
+        eprintln!(
+            "{} No supported package manager found (brew/apt/yum)",
+            "Error:".red().bold()
+        );
+        std::process::exit(1);
+    });
+
+    println!(
+        "📦 Installing JDK {} via {}...",
+        version.green().bold(),
+        mgr
+    );
+
+    let status = match mgr {
+        "brew" => Command::new("brew")
+            .args(["install", "--cask", &format!("temurin@{}", version)])
+            .status(),
+        "apt" => Command::new("sudo")
+            .args(["apt-get", "install", "-y", &format!("openjdk-{}-jdk", version)])
+            .status(),
+        "yum" => Command::new("sudo")
+            .args(["yum", "install", "-y", &format!("java-{}-openjdk-devel", version)])
+            .status(),
+        _ => unreachable!(),
+    };
+
+    match status {
+        Ok(s) if s.success() => {
+            println!(
+                "\n{} JDK {} installed successfully!",
+                "✓".green().bold(),
+                version.green().bold()
+            );
+            println!("  Run {} to see it, then {} to switch.", "jvs list".cyan(), "jvs use".cyan());
+        }
+        Ok(s) => {
+            eprintln!(
+                "{} Installation failed with exit code {}",
+                "Error:".red().bold(),
+                s.code().unwrap_or(-1)
+            );
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("{} Failed to run package manager: {}", "Error:".red().bold(), e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn cmd_remove(version: &str) {
+    let (mgr, _) = detect_pkg_manager().unwrap_or_else(|| {
+        eprintln!(
+            "{} No supported package manager found (brew/apt/yum)",
+            "Error:".red().bold()
+        );
+        std::process::exit(1);
+    });
+
+    println!(
+        "🗑  Removing JDK {} via {}...",
+        version.green().bold(),
+        mgr
+    );
+
+    let status = match mgr {
+        "brew" => Command::new("brew")
+            .args(["uninstall", "--cask", &format!("temurin@{}", version)])
+            .status(),
+        "apt" => Command::new("sudo")
+            .args(["apt-get", "remove", "-y", &format!("openjdk-{}-jdk", version)])
+            .status(),
+        "yum" => Command::new("sudo")
+            .args(["yum", "remove", "-y", &format!("java-{}-openjdk-devel", version)])
+            .status(),
+        _ => unreachable!(),
+    };
+
+    match status {
+        Ok(s) if s.success() => {
+            println!(
+                "\n{} JDK {} removed successfully!",
+                "✓".green().bold(),
+                version.green().bold()
+            );
+        }
+        Ok(s) => {
+            eprintln!(
+                "{} Removal failed with exit code {}",
+                "Error:".red().bold(),
+                s.code().unwrap_or(-1)
+            );
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("{} Failed to run package manager: {}", "Error:".red().bold(), e);
+            std::process::exit(1);
+        }
+    }
+}
+
 fn main() {
     let cli = Cli::parse();
     match cli.command {
         Commands::List => cmd_list(),
         Commands::Current => cmd_current(),
         Commands::Use { version } => cmd_use(&version),
+        Commands::Install { version } => cmd_install(&version),
+        Commands::Remove { version } => cmd_remove(&version),
     }
 }

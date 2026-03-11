@@ -9,6 +9,8 @@ A lightweight CLI tool written in Rust to manage and switch between multiple Jav
 - Switch between Java versions by setting JAVA_HOME
 - Automatic PATH cleanup to prevent version conflicts
 - Shell function wrapper for instant switching without manual source
+- Install JDK versions via system package manager (brew/apt/yum)
+- Remove JDK versions via system package manager
 - Supports Java installations in standard locations:
   - macOS: `/Library/Java/JavaVirtualMachines/`, `~/Library/Java/JavaVirtualMachines/`
   - Linux: `/usr/lib/jvm/`, `/usr/java/`, `/opt/java/`, `~/.sdkman/candidates/java/`, `~/.jdks/`
@@ -71,6 +73,40 @@ jvs use 11
 This matches the version prefix, so `jvs use 11` will match `11.0.20`, `jvs use 1.8` will match `1.8.0_341`, etc.
 
 The shell function wrapper automatically sources `~/.jvs/env` after switching, so the change takes effect immediately in your current shell.
+
+### Install a JDK
+
+```bash
+jvs install <major_version>
+```
+
+Installs a JDK using the system package manager:
+
+| Platform | Package Manager | JDK Source |
+|----------|----------------|------------|
+| macOS | brew | Eclipse Temurin (`temurin@{version}`) |
+| Linux | apt | OpenJDK (`openjdk-{version}-jdk`) |
+| Linux | yum | OpenJDK (`java-{version}-openjdk-devel`) |
+
+Example:
+```bash
+jvs install 21    # Install JDK 21
+jvs list          # Verify installation
+jvs use 21        # Switch to it
+```
+
+### Remove a JDK
+
+```bash
+jvs remove <major_version>
+```
+
+Removes a JDK using the system package manager.
+
+Example:
+```bash
+jvs remove 21
+```
 
 ## How It Works
 
