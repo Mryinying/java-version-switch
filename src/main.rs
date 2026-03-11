@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
-#[command(name = "jvs", version, about = "Java Version Switch - manage Java versions on macOS")]
+#[command(name = "jvs", version, about = "Java Version Switch - manage Java versions on macOS and Linux")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -76,42 +76,58 @@ fn parse_release_file(home: &Path) -> Option<(String, String)> {
     Some((version?, vendor.unwrap_or_else(|| "Unknown".into())))
 }
 
-fn detect_java_versions() -> Vec<JavaVersion> {
-    let scan_dirs: Vec<PathBuf> = vec![
-        PathBuf::from("/Library/Java/JavaVirtualMachines"),
-        dirs::home_dir()
-            .map(|h| h.join("Library/Java/JavaVirtualMachines"))
-            .unwrap_or_default(),
-    ];
+fn scan_dirs() -> Vec<PathBuf> {
+    let home = dirs::home_dir();
+    if cfg!(target_os = "macos") {
+        vec![
+            PathBuf::from("/Library/Java/JavaVirtualMachines"),
+            home.map(|h| h.join("Library/Java/JavaVirtualMachines"))
+                .unwrap_or_default(),
+        ]
+    } else {
+        // Linux
+        let mut dirs = vec![
+            PathBuf::from("/usr/lib/jvm"),
+            PathBuf::from("/usr/java"),
+            PathBuf::from("/opt/java"),
+        ];
+        if let Some(h) = home {
+            dirs.push(h.join(".sdkman/candidates/java"));
+            dirs.push(h.join(".jdks"));
+        }
+        dirs
+    }
+}
 
+fn try_resolve_home(entry_path: &Path) -> Option<PathBuf> {
+    // macOS: JDK_DIR/Contents/Home/release
+    let mac_home = entry_path.join("Contents/Home");
+    if mac_home.join("release").exists() {
+        return Some(mac_home);
+    }
+    // Linux / flat layout: JDK_DIR/release
+    if entry_path.join("release").exists() {
+        return Some(entry_path.to_path_buf());
+    }
+    None
+}
+
+fn detect_java_versions() -> Vec<JavaVersion> {
     let mut versions = Vec::new();
-    for dir in &scan_dirs {
+    for dir in &scan_dirs() {
         let entries = match fs::read_dir(dir) {
             Ok(e) => e,
             Err(_) => continue,
         };
         for entry in entries.flatten() {
-            let home = entry.path().join("Contents/Home");
-            if !home.exists() {
-                // Some installations (e.g. ~/Library/Java) may not have Contents/Home wrapper
-                let alt_home = entry.path();
-                if alt_home.join("release").exists() {
-                    if let Some((ver, ven)) = parse_release_file(&alt_home) {
-                        versions.push(JavaVersion {
-                            version: ver,
-                            vendor: ven,
-                            home: alt_home,
-                        });
-                    }
+            if let Some(home) = try_resolve_home(&entry.path()) {
+                if let Some((ver, ven)) = parse_release_file(&home) {
+                    versions.push(JavaVersion {
+                        version: ver,
+                        vendor: ven,
+                        home,
+                    });
                 }
-                continue;
-            }
-            if let Some((ver, ven)) = parse_release_file(&home) {
-                versions.push(JavaVersion {
-                    version: ver,
-                    vendor: ven,
-                    home,
-                });
             }
         }
     }
@@ -200,11 +216,11 @@ fn cmd_use(version_prefix: &str) {
 
             // Write env file - clean old Java paths from PATH before adding new one
             let env_content = format!(
-                r#"export JAVA_HOME="{}"
-export PATH="$(echo "$PATH" | tr ':' '\n' | grep -v '/JavaVirtualMachines/' | tr '\n' ':' | sed 's/:$//')"
+                r#"export JAVA_HOME="{home}"
+export PATH="$(echo "$PATH" | tr ':' '\n' | grep -v -E '/JavaVirtualMachines/|/usr/lib/jvm/|/usr/java/|/opt/java/|/\.sdkman/candidates/java/|/\.jdks/' | tr '\n' ':' | sed 's/:$//')"
 export PATH="$JAVA_HOME/bin:$PATH"
 "#,
-                home_str
+                home = home_str
             );
             let dir = jvs_dir();
             fs::create_dir_all(&dir).expect("Failed to create ~/.jvs");

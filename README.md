@@ -1,15 +1,17 @@
 # JVS - Java Version Switch
 
-A lightweight CLI tool written in Rust to manage and switch between multiple Java versions on macOS.
+A lightweight CLI tool written in Rust to manage and switch between multiple Java versions on macOS and Linux.
 
 ## Features
 
-- List all installed Java versions on macOS
+- List all installed Java versions on macOS and Linux
 - Display the currently active Java version
 - Switch between Java versions by setting JAVA_HOME
 - Automatic PATH cleanup to prevent version conflicts
 - Shell function wrapper for instant switching without manual source
-- Supports Java installations in `/Library/Java/JavaVirtualMachines/` and `~/Library/Java/JavaVirtualMachines/`
+- Supports Java installations in standard locations:
+  - macOS: `/Library/Java/JavaVirtualMachines/`, `~/Library/Java/JavaVirtualMachines/`
+  - Linux: `/usr/lib/jvm/`, `/usr/java/`, `/opt/java/`, `~/.sdkman/candidates/java/`, `~/.jdks/`
 - Generates shell configuration for seamless switching
 
 ## Installation
@@ -72,7 +74,9 @@ The shell function wrapper automatically sources `~/.jvs/env` after switching, s
 
 ## How It Works
 
-1. **Detection**: Scans `/Library/Java/JavaVirtualMachines/` and `~/Library/Java/JavaVirtualMachines/` for installed JDKs
+1. **Detection**: Scans standard JDK directories for installed JDKs
+   - macOS: `/Library/Java/JavaVirtualMachines/`, `~/Library/Java/JavaVirtualMachines/`
+   - Linux: `/usr/lib/jvm/`, `/usr/java/`, `/opt/java/`, `~/.sdkman/candidates/java/`, `~/.jdks/`
 2. **Identification**: Reads `release` file in each JDK home to extract version and vendor info
 3. **PATH Cleanup**: Removes existing Java paths from PATH to prevent conflicts
 4. **Switching**: Writes the selected JAVA_HOME to `~/.jvs/env` as an export statement
@@ -109,7 +113,7 @@ This will remove:
 
 ## Requirements
 
-- macOS
+- macOS or Linux
 - One or more JDK installations
 - Rust 1.70+ (for building)
 

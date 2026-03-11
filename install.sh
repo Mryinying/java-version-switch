@@ -6,10 +6,11 @@ JVS_DIR="$HOME/.jvs"
 SHELL_RC=""
 
 # Detect shell config file
-case "$SHELL" in
-  */zsh)  SHELL_RC="$HOME/.zshrc" ;;
-  */bash) SHELL_RC="$HOME/.bashrc" ;;
-esac
+if [ -n "$ZSH_VERSION" ] || [ "$SHELL" = "$(command -v zsh)" ]; then
+  SHELL_RC="$HOME/.zshrc"
+elif [ -n "$BASH_VERSION" ] || [ "$SHELL" = "$(command -v bash)" ]; then
+  SHELL_RC="$HOME/.bashrc"
+fi
 
 echo "🔧 Installing JVS (Java Version Switch)..."
 
@@ -28,7 +29,11 @@ cargo build --release
 
 # Install binary
 echo "📥 Installing jvs to $INSTALL_DIR..."
-sudo cp target/release/jvs "$INSTALL_DIR/jvs"
+if [ -w "$INSTALL_DIR" ]; then
+  cp target/release/jvs "$INSTALL_DIR/jvs"
+else
+  sudo cp target/release/jvs "$INSTALL_DIR/jvs"
+fi
 
 # Create jvs dir
 mkdir -p "$JVS_DIR"

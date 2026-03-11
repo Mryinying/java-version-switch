@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-JVS (Java Version Switch) 是一个用 Rust 编写的 macOS Java 版本管理命令行工具。
+JVS (Java Version Switch) 是一个用 Rust 编写的 macOS / Linux Java 版本管理命令行工具。
 
 ## 技术栈
 
@@ -38,7 +38,7 @@ java-version-switch/
 程序采用单文件结构，逻辑上分为以下模块：
 
 1. **CLI 定义** (`Cli` / `Commands` enum) - 使用 clap derive 宏定义命令行接口
-2. **Java 检测** (`JavaVersion` struct + `detect_java_versions()`) - 扫描 macOS JDK 安装目录
+2. **Java 检测** (`JavaVersion` struct + `detect_java_versions()`) - 扫描 macOS / Linux JDK 安装目录
 3. **版本切换** (`cmd_use()`) - 写入 shell 环境文件和持久化配置
 4. **配置管理** (`JvsConfig` struct) - JSON 配置文件读写
 
@@ -60,8 +60,12 @@ struct JvsConfig {
 
 ```
 扫描目录:
-  /Library/Java/JavaVirtualMachines/*/Contents/Home
-  ~/Library/Java/JavaVirtualMachines/*/Contents/Home
+  macOS:
+    /Library/Java/JavaVirtualMachines/*/Contents/Home
+    ~/Library/Java/JavaVirtualMachines/*/Contents/Home
+  Linux:
+    /usr/lib/jvm/*, /usr/java/*, /opt/java/*
+    ~/.sdkman/candidates/java/*, ~/.jdks/*
       ↓
 读取每个 JDK 的 release 文件
       ↓
@@ -113,11 +117,11 @@ cargo run -- use 17
 3. **Shell env 文件**: 通过 `~/.jvs/env` 导出环境变量，兼容 bash/zsh
 4. **release 文件解析**: 直接读取 JDK 的 `release` 文件获取版本信息，比执行 `java -version` 更快更可靠
 5. **不依赖 /usr/libexec/java_home**: 直接扫描文件系统，更透明可控
+6. **跨平台**: 通过 `cfg!(target_os)` 区分 macOS 和 Linux 扫描路径
 
 ## 扩展方向
 
 - 支持自动下载安装 JDK (类似 sdkman)
 - 支持项目级 `.java-version` 文件
-- 支持 Linux
 - 添加 `jvs default` 命令设置默认版本
 - Homebrew formula 发布
