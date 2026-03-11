@@ -1,24 +1,21 @@
 # JVS - Java Version Switch
 
-A lightweight CLI tool written in Rust to manage and switch between multiple Java versions on macOS and Linux.
+轻量级 Java 版本管理 CLI 工具，使用 Rust 编写，支持 macOS 和 Linux。
 
-## Features
+## 功能特性
 
-- List all installed Java versions on macOS and Linux
-- Display the currently active Java version
-- Switch between Java versions by setting JAVA_HOME
-- Automatic PATH cleanup to prevent version conflicts
-- Shell function wrapper for instant switching without manual source
-- Install JDK versions via system package manager (brew/apt/yum)
-- Remove JDK versions via system package manager
-- Supports Java installations in standard locations:
-  - macOS: `/Library/Java/JavaVirtualMachines/`, `~/Library/Java/JavaVirtualMachines/`
-  - Linux: `/usr/lib/jvm/`, `/usr/java/`, `/opt/java/`, `~/.sdkman/candidates/java/`, `~/.jdks/`
-- Generates shell configuration for seamless switching
+- 列出所有已安装的 Java 版本
+- 显示当前使用的 Java 版本
+- 通过前缀匹配快速切换 Java 版本
+- 自动清理 PATH，防止版本冲突
+- Shell 函数包装器，切换后即时生效，无需手动 source
+- 通过系统包管理器（brew/apt/yum）安装 JDK
+- 通过系统包管理器卸载 JDK
+- 支持标准 JDK 安装路径：
+  - macOS: `/Library/Java/JavaVirtualMachines/`、`~/Library/Java/JavaVirtualMachines/`
+  - Linux: `/usr/lib/jvm/`、`/usr/java/`、`/opt/java/`、`~/.sdkman/candidates/java/`、`~/.jdks/`
 
-## Installation
-
-### One-click install
+## 安装
 
 ```bash
 git clone <repo-url>
@@ -26,101 +23,98 @@ cd java-version-switch
 ./install.sh
 ```
 
-This will automatically:
-- Install Rust toolchain if not present
-- Build the project
-- Copy `jvs` binary to `/usr/local/bin/`
-- Configure your shell (`~/.zshrc` or `~/.bashrc`)
-- Add a shell function wrapper for auto-sourcing
+安装脚本会自动完成：
+- 检测并安装 Rust 工具链（如未安装）
+- 编译项目
+- 将 `jvs` 可执行文件复制到 `/usr/local/bin/`
+- 在 shell 配置文件（`~/.zshrc` 或 `~/.bashrc`）中添加自动加载配置和函数包装器
 
-After installation, reload your shell:
+安装完成后，重新加载 shell：
 
 ```bash
 source ~/.zshrc
 ```
 
-## Usage
+## 使用方法
 
-### List all installed Java versions
+### 列出已安装的 Java 版本
 
 ```bash
 jvs list
 ```
 
-Output example:
+输出示例：
 ```
 Installed Java versions:
-  * 17.0.14  (Microsoft OpenJDK)  ~/Library/Java/JavaVirtualMachines/ms-17.0.14
-    17.0.4.1 (Oracle Java SE)     /Library/Java/JavaVirtualMachines/jdk-17.0.4.1.jdk
-    11.0.20  (Oracle Java SE)     /Library/Java/JavaVirtualMachines/jdk-11.jdk
-    1.8.0_341 (Oracle Java SE)    /Library/Java/JavaVirtualMachines/jdk1.8.0_341.jdk
+  * 17.0.14  (Microsoft)           ~/Library/Java/JavaVirtualMachines/ms-17.0.14
+    17.0.4.1 (Oracle Corporation)  /Library/Java/JavaVirtualMachines/jdk-17.0.4.1.jdk
+    11.0.20  (Oracle Corporation)  /Library/Java/JavaVirtualMachines/jdk-11.jdk
+    1.8.0_341 (Unknown)            /Library/Java/JavaVirtualMachines/jdk1.8.0_341.jdk
 ```
 
-`*` indicates the currently active version.
+`*` 标记表示当前正在使用的版本。
 
-### Show current Java version
+### 查看当前 Java 版本
 
 ```bash
 jvs current
 ```
 
-### Switch Java version
+### 切换 Java 版本
 
 ```bash
 jvs use 11
 ```
 
-This matches the version prefix, so `jvs use 11` will match `11.0.20`, `jvs use 1.8` will match `1.8.0_341`, etc.
+支持前缀匹配：`jvs use 11` 匹配 `11.0.20`，`jvs use 1.8` 匹配 `1.8.0_341`。
 
-The shell function wrapper automatically sources `~/.jvs/env` after switching, so the change takes effect immediately in your current shell.
+通过 `install.sh` 安装后，切换会立即在当前 shell 中生效，无需手动操作。
 
-### Install a JDK
+### 安装 JDK
 
 ```bash
-jvs install <major_version>
+jvs install <主版本号>
 ```
 
-Installs a JDK using the system package manager:
+通过系统包管理器安装 JDK：
 
-| Platform | Package Manager | JDK Source |
-|----------|----------------|------------|
+| 平台 | 包管理器 | JDK 来源 |
+|------|---------|----------|
 | macOS | brew | Eclipse Temurin (`temurin@{version}`) |
 | Linux | apt | OpenJDK (`openjdk-{version}-jdk`) |
 | Linux | yum | OpenJDK (`java-{version}-openjdk-devel`) |
 
-Example:
+示例：
 ```bash
-jvs install 21    # Install JDK 21
-jvs list          # Verify installation
-jvs use 21        # Switch to it
+jvs install 21    # 安装 JDK 21
+jvs list          # 查看安装结果
+jvs use 21        # 切换到新版本
 ```
 
-### Remove a JDK
+### 卸载 JDK
 
 ```bash
-jvs remove <major_version>
+jvs remove <主版本号>
 ```
 
-Removes a JDK using the system package manager.
-
-Example:
+示例：
 ```bash
 jvs remove 21
 ```
 
-## How It Works
+## 工作原理
 
-1. **Detection**: Scans standard JDK directories for installed JDKs
-   - macOS: `/Library/Java/JavaVirtualMachines/`, `~/Library/Java/JavaVirtualMachines/`
-   - Linux: `/usr/lib/jvm/`, `/usr/java/`, `/opt/java/`, `~/.sdkman/candidates/java/`, `~/.jdks/`
-2. **Identification**: Reads `release` file in each JDK home to extract version and vendor info
-3. **PATH Cleanup**: Removes existing Java paths from PATH to prevent conflicts
-4. **Switching**: Writes the selected JAVA_HOME to `~/.jvs/env` as an export statement
-5. **Persistence**: Saves the selection to `~/.jvs/config.json`
+1. **检测**：扫描标准 JDK 安装目录
+   - macOS: `/Library/Java/JavaVirtualMachines/`、`~/Library/Java/JavaVirtualMachines/`
+   - Linux: `/usr/lib/jvm/`、`/usr/java/`、`/opt/java/`、`~/.sdkman/candidates/java/`、`~/.jdks/`
+2. **识别**：读取每个 JDK 的 `release` 文件，提取版本和厂商信息
+3. **PATH 清理**：切换时移除 PATH 中残留的旧 Java 路径，防止冲突
+4. **切换**：将选中的 JAVA_HOME 写入 `~/.jvs/env`
+5. **持久化**：将选择保存到 `~/.jvs/config.json`
 
-## Configuration
+## 配置文件
 
-Config file location: `~/.jvs/config.json`
+配置文件位置：`~/.jvs/config.json`
 
 ```json
 {
@@ -128,7 +122,7 @@ Config file location: `~/.jvs/config.json`
 }
 ```
 
-Shell env file: `~/.jvs/env`
+Shell 环境文件：`~/.jvs/env`
 
 ```bash
 export JAVA_HOME="/Library/Java/JavaVirtualMachines/jdk-11.jdk/Contents/Home"
@@ -136,23 +130,23 @@ export PATH="$(echo "$PATH" | tr ':' '\n' | grep -v '/JavaVirtualMachines/' | tr
 export PATH="$JAVA_HOME/bin:$PATH"
 ```
 
-## Uninstall
+## 卸载工具
 
 ```bash
 ./uninstall.sh
 ```
 
-This will remove:
-- The `jvs` binary from `/usr/local/bin/`
-- The `~/.jvs/` directory
-- Shell configuration entries from `~/.zshrc` or `~/.bashrc`
+将移除：
+- `/usr/local/bin/jvs` 可执行文件
+- `~/.jvs/` 配置目录
+- shell 配置文件中的 JVS 配置块
 
-## Requirements
+## 系统要求
 
-- macOS or Linux
-- One or more JDK installations
-- Rust 1.70+ (for building)
+- macOS 或 Linux
+- 至少安装一个 JDK
+- Rust 1.70+（用于编译）
 
-## License
+## 许可证
 
 MIT
