@@ -130,6 +130,39 @@ export PATH="$(echo "$PATH" | tr ':' '\n' | grep -v '/JavaVirtualMachines/' | tr
 export PATH="$JAVA_HOME/bin:$PATH"
 ```
 
+## MCP Server
+
+JVS 内置 MCP (Model Context Protocol) Server，可让 AI 助手通过标准协议管理 Java 版本。
+
+启动方式：
+
+```bash
+jvs mcp
+```
+
+在 MCP 客户端（如 Kiro、Claude Desktop）中配置：
+
+```json
+{
+  "mcpServers": {
+    "jvs": {
+      "command": "jvs",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+提供的 tools：
+
+| Tool | 说明 |
+|------|------|
+| `list` | 列出所有已安装的 Java 版本 |
+| `current` | 显示当前使用的 Java 版本 |
+| `use` | 切换 Java 版本（前缀匹配） |
+| `install` | 通过包管理器安装 JDK |
+| `remove` | 通过包管理器卸载 JDK |
+
 ## 卸载工具
 
 ```bash

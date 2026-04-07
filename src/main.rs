@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use colored::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -33,6 +34,8 @@ enum Commands {
         /// Major version to remove, e.g. "17", "21", "11"
         version: String,
     },
+    /// Start MCP (Model Context Protocol) server over stdio
+    Mcp,
 }
 
 #[derive(Debug)]
@@ -396,5 +399,225 @@ fn main() {
         Commands::Use { version } => cmd_use(&version),
         Commands::Install { version } => cmd_install(&version),
         Commands::Remove { version } => cmd_remove(&version),
+        Commands::Mcp => cmd_mcp(),
+    }
+}
+
+// ── MCP Server ──────────────────────────────────────────────────────────────
+
+fn cmd_mcp() {
+    let stdin = std::io::stdin();
+    for line in stdin.lock().lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+        let line = line.trim().to_string();
+        if line.is_empty() {
+            continue;
+        }
+        let req: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let id = req.get("id").cloned();
+        let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
+
+        let response = match method {
+            "initialize" => Some(mcp_response(id, serde_json::json!({
+                "protocolVersion": "2024-11-05",
+                "capabilities": { "tools": {} },
+                "serverInfo": { "name": "jvs", "version": env!("CARGO_PKG_VERSION") }
+            }))),
+            "notifications/initialized" | "notifications/cancelled" => None,
+            "tools/list" => Some(mcp_response(id, serde_json::json!({
+                "tools": [
+                    {
+                        "name": "list",
+                        "description": "List all installed Java versions",
+                        "inputSchema": { "type": "object", "properties": {} }
+                    },
+                    {
+                        "name": "current",
+                        "description": "Show the currently active Java version",
+                        "inputSchema": { "type": "object", "properties": {} }
+                    },
+                    {
+                        "name": "use",
+                        "description": "Switch to a Java version by prefix match (e.g. '17', '11', '1.8')",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": { "version": { "type": "string", "description": "Version prefix to match" } },
+                            "required": ["version"]
+                        }
+                    },
+                    {
+                        "name": "install",
+                        "description": "Install a JDK via system package manager (brew/apt/yum)",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": { "version": { "type": "string", "description": "Major version to install" } },
+                            "required": ["version"]
+                        }
+                    },
+                    {
+                        "name": "remove",
+                        "description": "Remove a JDK via system package manager",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": { "version": { "type": "string", "description": "Major version to remove" } },
+                            "required": ["version"]
+                        }
+                    }
+                ]
+            }))),
+            "tools/call" => {
+                let params = req.get("params").cloned().unwrap_or(serde_json::json!({}));
+                let tool = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                let args = params.get("arguments").cloned().unwrap_or(serde_json::json!({}));
+                let result = mcp_call_tool(tool, &args);
+                Some(mcp_response(id, result))
+            }
+            _ => Some(mcp_error(id, -32601, "Method not found")),
+        };
+
+        if let Some(resp) = response {
+            println!("{}", resp);
+        }
+    }
+}
+
+fn mcp_response(id: Option<serde_json::Value>, result: serde_json::Value) -> String {
+    serde_json::to_string(&serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": result
+    }))
+    .unwrap()
+}
+
+fn mcp_error(id: Option<serde_json::Value>, code: i32, msg: &str) -> String {
+    serde_json::to_string(&serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": { "code": code, "message": msg }
+    }))
+    .unwrap()
+}
+
+fn mcp_text(text: String, is_error: bool) -> serde_json::Value {
+    serde_json::json!({
+        "content": [{ "type": "text", "text": text }],
+        "isError": is_error
+    })
+}
+
+fn mcp_call_tool(tool: &str, args: &serde_json::Value) -> serde_json::Value {
+    match tool {
+        "list" => {
+            let versions = detect_java_versions();
+            if versions.is_empty() {
+                return mcp_text("No Java versions found.".into(), false);
+            }
+            let current = get_current_home();
+            let mut out = String::from("Installed Java versions:\n");
+            for jv in &versions {
+                let home_str = jv.home.display().to_string();
+                let marker = if current.as_deref() == Some(&home_str) { " *" } else { "  " };
+                out.push_str(&format!("{} {:<12} ({})  {}\n", marker, jv.version, jv.vendor, home_str));
+            }
+            mcp_text(out, false)
+        }
+        "current" => {
+            let versions = detect_java_versions();
+            let current = get_current_home();
+            match current {
+                Some(home) => {
+                    let info = versions.iter().find(|v| v.home.display().to_string() == home);
+                    match info {
+                        Some(jv) => mcp_text(format!("Current Java: {} ({})\n  JAVA_HOME={}", jv.version, jv.vendor, jv.home.display()), false),
+                        None => mcp_text(format!("JAVA_HOME={}\n(not managed by jvs)", home), false),
+                    }
+                }
+                None => mcp_text("No Java version is currently set.".into(), false),
+            }
+        }
+        "use" => {
+            let prefix = args.get("version").and_then(|v| v.as_str()).unwrap_or("");
+            if prefix.is_empty() {
+                return mcp_text("Missing required argument: version".into(), true);
+            }
+            let versions = detect_java_versions();
+            let matches: Vec<&JavaVersion> = versions.iter().filter(|v| v.version.starts_with(prefix)).collect();
+            match matches.len() {
+                0 => mcp_text(format!("No installed Java version matches '{}'", prefix), true),
+                1 => {
+                    let selected = matches[0];
+                    let home_str = selected.home.display().to_string();
+                    let env_content = format!(
+                        "export JAVA_HOME=\"{home}\"\nexport PATH=\"$(echo \"$PATH\" | tr ':' '\\n' | grep -v -E '/JavaVirtualMachines/|/usr/lib/jvm/|/usr/java/|/opt/java/|/\\.sdkman/candidates/java/|/\\.jdks/' | tr '\\n' ':' | sed 's/:$//')\"\\nexport PATH=\"$JAVA_HOME/bin:$PATH\"\n",
+                        home = home_str
+                    );
+                    let dir = jvs_dir();
+                    let _ = fs::create_dir_all(&dir);
+                    if let Err(e) = fs::write(env_path(), env_content) {
+                        return mcp_text(format!("Failed to write env file: {}", e), true);
+                    }
+                    save_config(&JvsConfig { current: Some(home_str.clone()) });
+                    mcp_text(format!("Switched to Java {} ({})\n  JAVA_HOME={}", selected.version, selected.vendor, home_str), false)
+                }
+                _ => {
+                    let mut msg = format!("Multiple versions match '{}'. Be more specific:\n", prefix);
+                    for m in &matches {
+                        msg.push_str(&format!("  - {} ({})\n", m.version, m.vendor));
+                    }
+                    mcp_text(msg, true)
+                }
+            }
+        }
+        "install" => {
+            let version = args.get("version").and_then(|v| v.as_str()).unwrap_or("");
+            if version.is_empty() {
+                return mcp_text("Missing required argument: version".into(), true);
+            }
+            let (mgr, _) = match detect_pkg_manager() {
+                Some(m) => m,
+                None => return mcp_text("No supported package manager found (brew/apt/yum)".into(), true),
+            };
+            let status = match mgr {
+                "brew" => Command::new("brew").args(["install", "--cask", &format!("temurin@{}", version)]).output(),
+                "apt" => Command::new("sudo").args(["apt-get", "install", "-y", &format!("openjdk-{}-jdk", version)]).output(),
+                "yum" => Command::new("sudo").args(["yum", "install", "-y", &format!("java-{}-openjdk-devel", version)]).output(),
+                _ => unreachable!(),
+            };
+            match status {
+                Ok(o) if o.status.success() => mcp_text(format!("JDK {} installed successfully via {}", version, mgr), false),
+                Ok(o) => mcp_text(format!("Installation failed:\n{}", String::from_utf8_lossy(&o.stderr)), true),
+                Err(e) => mcp_text(format!("Failed to run package manager: {}", e), true),
+            }
+        }
+        "remove" => {
+            let version = args.get("version").and_then(|v| v.as_str()).unwrap_or("");
+            if version.is_empty() {
+                return mcp_text("Missing required argument: version".into(), true);
+            }
+            let (mgr, _) = match detect_pkg_manager() {
+                Some(m) => m,
+                None => return mcp_text("No supported package manager found (brew/apt/yum)".into(), true),
+            };
+            let status = match mgr {
+                "brew" => Command::new("brew").args(["uninstall", "--cask", &format!("temurin@{}", version)]).output(),
+                "apt" => Command::new("sudo").args(["apt-get", "remove", "-y", &format!("openjdk-{}-jdk", version)]).output(),
+                "yum" => Command::new("sudo").args(["yum", "remove", "-y", &format!("java-{}-openjdk-devel", version)]).output(),
+                _ => unreachable!(),
+            };
+            match status {
+                Ok(o) if o.status.success() => mcp_text(format!("JDK {} removed successfully via {}", version, mgr), false),
+                Ok(o) => mcp_text(format!("Removal failed:\n{}", String::from_utf8_lossy(&o.stderr)), true),
+                Err(e) => mcp_text(format!("Failed to run package manager: {}", e), true),
+            }
+        }
+        _ => mcp_text(format!("Unknown tool: {}", tool), true),
     }
 }
